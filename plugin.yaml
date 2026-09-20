@@ -1,0 +1,3 @@
+name: reset-bundled-skills
+version: "1.0.0"
+description: Reinstall bundled skills into their category directories from the bundled source.
