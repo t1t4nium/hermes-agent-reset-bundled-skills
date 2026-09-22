@@ -122,7 +122,11 @@ def apply(overwrite_modified: bool) -> Dict[str, Any]:
 
     suppressed = read_suppressed_names()
     pruned = sorted(name for name in suppressed if is_bundled(name))
-    modified = [entry["name"] for entry in list_user_modified_bundled_skills()] if overwrite_modified else []
+    # Capture the modified skills up front, before clearing the manifest: the detector
+    # compares the local copy against the origin hash in the manifest, so it reports
+    # nothing once those entries are gone.
+    modified_entries = list_user_modified_bundled_skills() if overwrite_modified else []
+    modified = [entry["name"] for entry in modified_entries]
 
     manifest = _read_manifest()
 
@@ -144,13 +148,13 @@ def apply(overwrite_modified: bool) -> Dict[str, Any]:
         manifest.pop(name, None)
     _write_manifest(manifest)
 
-    # Overwrite edited copies with stock when requested.
+    # Overwrite edited copies with stock when requested. Use the entries captured above:
+    # re-calling the detector here would find nothing because the manifest was just cleared.
     if overwrite_modified:
-        for entry in list_user_modified_bundled_skills():
-            if entry["name"] in modified:
-                dest = Path(entry["dest"])
-                if dest.exists():
-                    _rmtree_writable(dest)
+        for entry in modified_entries:
+            dest = Path(entry["dest"])
+            if dest.exists():
+                _rmtree_writable(dest)
 
     sync_result = sync_skills(quiet=True)
 
