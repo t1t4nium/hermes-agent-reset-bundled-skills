@@ -14,7 +14,7 @@ concurrency:
 
 jobs:
   compat:
-    runs-on: ubuntu-latest
+    runs-on: debian-latest
     timeout-minutes: 30
     steps:
       - name: Install Hermes
@@ -25,7 +25,7 @@ jobs:
           bash /tmp/hermes-install.sh
       - name: Add Hermes launcher to PATH
         run: echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-      - name: Install plugin (README method)
+      - name: Install plugin
         run: hermes plugins install t1t4nium/hermes-agent-reset-bundled-skills --enable
       - name: Run self-test
         run: hermes reset-bundled-skills-selftest
