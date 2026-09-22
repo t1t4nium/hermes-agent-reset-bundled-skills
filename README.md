@@ -139,8 +139,8 @@ as the bundled catalog changes.
 
 A GitHub Actions workflow (`.github/workflows/compat.yml`) runs the same
 self-test against the latest Hermes on a weekly schedule and on manual dispatch,
-installing the plugin with the README install command. It catches breakage
-introduced by Hermes updates without any manual step.
+installing the plugin. It catches breakage introduced by Hermes updates without
+any manual step.
 
 ## Notes and limitations
 
