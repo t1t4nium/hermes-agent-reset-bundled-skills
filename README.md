@@ -49,20 +49,13 @@ only changed when `--overwrite-modified` is passed.
 
 ## Install
 
-The plugin is a directory plugin. Copy or symlink it into the user plugins directory, then
-enable it.
+Install from Git (the official Hermes flow):
 
 ```bash
-cp -r hermes-agent-reset-bundled-skills ~/.hermes/plugins/reset-bundled-skills
+hermes plugins install t1t4nium/hermes-agent-reset-bundled-skills
 ```
 
-Add the plugin to `plugins.enabled` in `~/.hermes/config.yaml`:
-
-```yaml
-plugins:
-  enabled:
-    - reset-bundled-skills
-```
+Answer `y` to the `Enable now?` prompt, or pass `--enable`.
 
 Verify it is loaded:
 
