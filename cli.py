@@ -94,3 +94,13 @@ def _confirm(overwrite: bool) -> bool:
         )
     answer = input("Proceed? [y/N] ").strip().lower()
     return answer in {"y", "yes"}
+
+
+def register_selftest_cli(subparser: argparse.ArgumentParser) -> None:
+    subparser.set_defaults(func=selftest_command)
+
+
+def selftest_command(args: argparse.Namespace) -> int:
+    from . import selftest
+
+    return selftest.run()

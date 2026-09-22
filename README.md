@@ -122,6 +122,26 @@ The reset runs four steps, in order:
 When `--overwrite-modified` is set, the edited live copies are deleted before the sync, so
 the sync re-copies the stock version.
 
+## Self-test
+
+The plugin ships a self-test for developers. It runs the whole recipe inside a
+throwaway Hermes home and never touches the real profile: it seeds five pruned
+bundled skills and one edited one, then exercises `status`, the plan, `apply`,
+idempotency, and `--overwrite-modified`.
+
+```bash
+hermes reset-bundled-skills-selftest
+```
+
+Exit code 0 means everything passed. The skills are picked from the manifest at
+runtime (essentials and protected built-ins excluded), so the test keeps working
+as the bundled catalog changes.
+
+A GitHub Actions workflow (`.github/workflows/compat.yml`) runs the same
+self-test against the latest Hermes on a weekly schedule and on manual dispatch,
+installing the plugin with the README install command. It catches breakage
+introduced by Hermes updates without any manual step.
+
 ## Notes and limitations
 
 - Idempotent. Running it again after a successful reset reports nothing to do.
