@@ -52,12 +52,13 @@ def run() -> int:
 
     print("reset-bundled-skills self-test")
 
-    names = _pick_skills(6)
-    if len(names) < 6:
-        print(f"  [SKIP] only {len(names)} eligible bundled skill(s), need 6")
+    names = _pick_skills(7)
+    if len(names) < 7:
+        print(f"  [SKIP] only {len(names)} eligible bundled skill(s), need 7")
         return 0
     prune_names = names[:5]
     mod_name = names[5]
+    missing_name = names[6]
 
     home = Path(tempfile.mkdtemp(prefix="rbs-selftest-"))
     token = set_hermes_home_override(home)
@@ -87,6 +88,14 @@ def run() -> int:
         skill_md = mod_dir / "SKILL.md"
         skill_md.write_text(skill_md.read_text(encoding="utf-8") + "\n# local edit\n", encoding="utf-8")
 
+        # Seed: simulate a user-deleted bundled skill (directory gone, manifest entry kept,
+        # NOT suppressed, NOT archived) -- the "missing" state the sync refuses to re-add.
+        missing_dir = _find_skill_dir(missing_name)
+        if missing_dir is None:
+            check(f"seed {missing_name}", False, "not found after sync")
+            return 1
+        shutil.rmtree(missing_dir)
+
         # 1. status reflects the seeded state.
         stats = core.status()
         check(
@@ -95,18 +104,26 @@ def run() -> int:
             f"expected {sorted(prune_names)}, got {sorted(stats['pruned'])}",
         )
         check("status modified", stats["modified"] == [mod_name], f"got {stats['modified']}")
+        check("status missing", stats["missing"] == [missing_name], f"got {stats['missing']}")
 
-        # 2. plan without overwrite excludes the modified skill.
-        plan = core.collect_plan(overwrite_modified=False)
-        check("plan pruned only", set(plan["pruned"]) == set(prune_names) and plan["modified"] == [])
+        # 2. plan without overwrite/restore-missing excludes the modified and missing skills.
+        plan = core.collect_plan(overwrite_modified=False, restore_missing=False)
+        check("plan pruned only", set(plan["pruned"]) == set(prune_names)
+              and plan["modified"] == [] and plan["missing"] == [])
 
-        # 3. plan with overwrite includes the modified skill.
-        plan_ow = core.collect_plan(overwrite_modified=True)
-        check("plan includes modified", plan_ow["modified"] == [mod_name])
+        # 3. plan with overwrite includes the modified skill, still no missing.
+        plan_ow = core.collect_plan(overwrite_modified=True, restore_missing=False)
+        check("plan includes modified", plan_ow["modified"] == [mod_name] and plan_ow["missing"] == [])
 
-        # 4. apply without overwrite restores pruned, leaves the edit alone.
-        result = core.apply(overwrite_modified=False)
+        # 4. plan with restore-missing includes the missing skill.
+        plan_missing = core.collect_plan(overwrite_modified=False, restore_missing=True)
+        check("plan includes missing", plan_missing["missing"] == [missing_name])
+
+        # 5. apply without restore-missing restores pruned, leaves the edit and the
+        #    missing skill alone.
+        result = core.apply(overwrite_modified=False, restore_missing=False)
         check("apply restored count", len(result["restored"]) == len(prune_names))
+        check("apply reinstalled none", result["reinstalled"] == [])
         for name in prune_names:
             restored_dir = _find_skill_dir(name)
             if restored_dir is None:
@@ -117,13 +134,26 @@ def run() -> int:
                 check(f"restore {name} category", True)
         mod_after = (_find_skill_dir(mod_name) / "SKILL.md").read_text(encoding="utf-8")
         check("edit kept without overwrite", "# local edit" in mod_after)
+        check("missing still missing", _find_skill_dir(missing_name) is None)
 
-        # 5. idempotency.
+        # 6. idempotency.
         stats_after = core.status()
         check("idempotent no pruned", stats_after["pruned"] == [])
         check("idempotent no archive", stats_after["archive_bundled"] == 0)
 
-        # 6. apply with overwrite reverts the edit.
+        # 7. apply with restore-missing re-installs the missing skill at its category path.
+        result_missing = core.apply(overwrite_modified=False, restore_missing=True)
+        check("reinstall missing", result_missing["reinstalled"] == [missing_name],
+              f"got {result_missing['reinstalled']}")
+        reinstalled_dir = _find_skill_dir(missing_name)
+        if reinstalled_dir is None:
+            check(f"reinstall {missing_name} category", False, "still missing")
+        elif reinstalled_dir.parent == skills_dir:
+            check(f"reinstall {missing_name} category", False, "flat (category lost)")
+        else:
+            check(f"reinstall {missing_name} category", True)
+
+        # 8. apply with overwrite reverts the edit.
         result_ow = core.apply(overwrite_modified=True)
         check("overwrite modified", result_ow["overwritten"] == [mod_name], f"got {result_ow['overwritten']}")
         mod_final = (_find_skill_dir(mod_name) / "SKILL.md").read_text(encoding="utf-8")

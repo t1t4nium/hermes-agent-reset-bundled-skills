@@ -66,10 +66,39 @@ def _bundled_archive_names() -> List[str]:
     return sorted(name for name in names if is_bundled(name))
 
 
-def collect_plan(overwrite_modified: bool) -> Dict[str, List[str]]:
+def list_missing_bundled_skills() -> List[str]:
+    """Bundled skills tracked in the manifest whose directory is gone from the live tree.
+
+    This is the state ``sync_skills()`` calls "user-deleted" (name in the manifest but no
+    directory on disk) and refuses to re-add by design: neither the category path, nor a
+    flat path, nor ``.archive/`` holds the skill, and it is not suppressed. The manifest
+    entry lingers, so the skill silently vanishes from the index while ``status`` and
+    ``collect_plan`` (historically) reported nothing about it. Skills whose bundled source
+    was removed upstream are NOT reported here — the sync cleans those on its own.
+    """
+    from tools.skill_usage import _find_skill_dir, read_suppressed_names
+    from tools.skills_sync import _discover_bundled_skills, _get_bundled_dir, _read_manifest
+
+    manifest = _read_manifest()
+    if not manifest:
+        return []
+    bundled_dir = _get_bundled_dir()
+    bundled_names = {name for name, _ in _discover_bundled_skills(bundled_dir)}
+    suppressed = read_suppressed_names()
+    missing: List[str] = []
+    for name in sorted(manifest):
+        if name not in bundled_names or name in suppressed:
+            continue
+        if _find_skill_dir(name) is None:
+            missing.append(name)
+    return missing
+
+
+def collect_plan(overwrite_modified: bool, restore_missing: bool = False) -> Dict[str, List[str]]:
     """Compute what a reset would touch, without mutating anything.
 
-    Returns ``{"pruned": [...], "modified": [...]}``.
+    Returns ``{"pruned": [...], "modified": [...], "missing": [...]}``. ``modified`` is
+    populated only when ``overwrite_modified``; ``missing`` only when ``restore_missing``.
     """
     from tools.skill_usage import is_bundled, read_suppressed_names
     from tools.skills_sync_bundled_ops import list_user_modified_bundled_skills
@@ -79,7 +108,8 @@ def collect_plan(overwrite_modified: bool) -> Dict[str, List[str]]:
     modified: List[str] = []
     if overwrite_modified:
         modified = [entry["name"] for entry in list_user_modified_bundled_skills()]
-    return {"pruned": pruned, "modified": modified}
+    missing = list_missing_bundled_skills() if restore_missing else []
+    return {"pruned": pruned, "modified": modified, "missing": missing}
 
 
 def status() -> Dict[str, Any]:
@@ -91,6 +121,7 @@ def status() -> Dict[str, Any]:
     suppressed = read_suppressed_names()
     pruned = sorted(name for name in suppressed if is_bundled(name))
     modified = [entry["name"] for entry in list_user_modified_bundled_skills()]
+    missing = list_missing_bundled_skills()
     archive = _archive_dir()
     archive_bundled = 0
     archive_other = 0
@@ -106,15 +137,18 @@ def status() -> Dict[str, Any]:
         "bundled_total": len(_read_manifest()),
         "pruned": pruned,
         "modified": modified,
+        "missing": missing,
         "archive_bundled": archive_bundled,
         "archive_other": archive_other,
     }
 
 
-def apply(overwrite_modified: bool) -> Dict[str, Any]:
+def apply(overwrite_modified: bool, restore_missing: bool = False) -> Dict[str, Any]:
     """Execute the reset. Idempotent: a second run is a no-op.
 
-    Returns counters and the sync report.
+    Returns counters and the sync report. ``restore_missing`` re-installs bundled skills
+    whose manifest entry lingered after their directory vanished (the "user-deleted" state
+    ``sync_skills()`` refuses to re-add on its own).
     """
     from tools.skill_usage import _toggle_suppressed_name, forget, is_bundled, read_suppressed_names
     from tools.skills_sync import _read_manifest, _rmtree_writable, _write_manifest, sync_skills
@@ -127,6 +161,7 @@ def apply(overwrite_modified: bool) -> Dict[str, Any]:
     # nothing once those entries are gone.
     modified_entries = list_user_modified_bundled_skills() if overwrite_modified else []
     modified = [entry["name"] for entry in modified_entries]
+    missing = list_missing_bundled_skills() if restore_missing else []
 
     manifest = _read_manifest()
 
@@ -144,7 +179,7 @@ def apply(overwrite_modified: bool) -> Dict[str, Any]:
         archive_removed.append(name)
 
     # Forget manifest entries so sync treats these skills as new and re-copies them.
-    for name in pruned + modified:
+    for name in pruned + modified + missing:
         manifest.pop(name, None)
     _write_manifest(manifest)
 
@@ -165,6 +200,7 @@ def apply(overwrite_modified: bool) -> Dict[str, Any]:
     return {
         "restored": pruned,
         "overwritten": modified,
+        "reinstalled": missing,
         "archive_removed": archive_removed,
         "copied": sync_result.get("copied", []),
         "updated": sync_result.get("updated", []),

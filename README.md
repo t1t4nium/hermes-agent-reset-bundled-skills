@@ -13,6 +13,13 @@ bookkeeping that would otherwise make the skill invisible or keep it from re-see
 With `--overwrite-modified`, it additionally replaces bundled skills whose local copy was
 edited (by the user or by the agent) with the stock version from the repo.
 
+With `--restore-missing`, it additionally re-installs bundled skills whose manifest entry
+lingered after their directory disappeared from the live tree. That state is what the
+built-in sync calls "user-deleted": the name is in `.bundled_manifest` but no directory
+exists on disk, and the sync refuses to re-add such a skill by design. It is reported by
+`status` but only re-installed when explicitly requested, since a skill may have been
+deleted on purpose.
+
 ## Why
 
 The curator, when `curator.prune_builtins` is enabled, archives bundled skills that stay
@@ -45,7 +52,9 @@ and a confirmation.
 - `~/.hermes/skills/.usage.json` - drops the stale "archived" record for restored skills.
 
 Active bundled skills that were never edited are left alone. Edited bundled skills are
-only changed when `--overwrite-modified` is passed.
+only changed when `--overwrite-modified` is passed, and user-deleted bundled skills
+(manifest entry present, directory gone) are only re-installed when `--restore-missing`
+is passed.
 
 ## Install
 
@@ -74,6 +83,7 @@ hermes reset-bundled-skills --dry-run            # print the plan, change nothin
 hermes reset-bundled-skills                      # plan, warning, then confirmation
 hermes reset-bundled-skills --yes                # skip the confirmation prompt
 hermes reset-bundled-skills --overwrite-modified # also reset edited bundled skills
+hermes reset-bundled-skills --restore-missing    # also re-install user-deleted bundled skills
 ```
 
 Options:
@@ -84,6 +94,7 @@ Options:
 | `--dry-run` | Prints the plan and exits. No files change. |
 | `--yes` | Runs without the interactive `[y/N]` prompt. |
 | `--overwrite-modified` | Replaces bundled skills whose local copy differs from stock with the stock version. Destructive to local edits. |
+| `--restore-missing` | Re-installs bundled skills whose manifest entry lingers after their directory disappeared. Reported by `status` even without this flag. |
 
 Without `--yes`, the command always prints the plan and asks for confirmation before
 touching anything. With `--overwrite-modified`, the confirmation warning is stronger.
@@ -104,6 +115,8 @@ Bundled skills
   tracked in manifest: 58
   pruned (in .curator_suppressed): 36
   modified (differ from stock): 0
+  missing (manifest entry, no directory): 1
+    -> himalaya
 Archive directory
   bundled entries: 36
   other entries (optional/hub, left untouched): 19
@@ -122,12 +135,17 @@ The reset runs four steps, in order:
 When `--overwrite-modified` is set, the edited live copies are deleted before the sync, so
 the sync re-copies the stock version.
 
+When `--restore-missing` is set, the same mechanism is applied to user-deleted bundled
+skills: their lingering manifest entry is cleared and `sync_skills()` re-copies them from
+the bundled source at their category path. This is exactly what `hermes skills reset
+<name>` does per skill, batched here.
+
 ## Self-test
 
 The plugin ships a self-test for developers. It runs the whole recipe inside a
 throwaway Hermes home and never touches the real profile: it seeds five pruned
-bundled skills and one edited one, then exercises `status`, the plan, `apply`,
-idempotency, and `--overwrite-modified`.
+bundled skills, one edited one, and one user-deleted one, then exercises `status`,
+the plan, `apply`, idempotency, `--overwrite-modified`, and `--restore-missing`.
 
 ```bash
 hermes reset-bundled-skills-selftest
